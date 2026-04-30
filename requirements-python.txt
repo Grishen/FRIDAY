@@ -1,0 +1,7 @@
+-e services/audit
+-e services/memory
+-e services/tools
+-e services/workflow
+-e services/notifications
+-e services/agent
+-e services/api
