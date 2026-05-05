@@ -1,7 +1,5 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  transpilePackages: ["@picovoice/porcupine-web", "@picovoice/web-voice-processor"],
-};
+const nextConfig: NextConfig = {};
 
 export default nextConfig;

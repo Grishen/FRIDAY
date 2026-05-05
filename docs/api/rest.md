@@ -34,6 +34,15 @@ Public — no `X-User-Id`:
 - **`POST /sessions/{id}/transcribe`** — **`multipart/form-data`** field **`file`** (≤ `STT_MAX_UPLOAD_BYTES`). Uses **`OPENAI_API_KEY`** against **`OPENAI_BASE_URL`/audio/transcriptions** with **`OPENAI_WHISPER_MODEL`** (default `whisper-1`). When **`FRIDAY_PYTEST=1`** and no API key, returns deterministic mock text without calling the cloud.
 - **`POST /sessions/{id}/realtime/webrtc`** — SDP offer body (`Content-Type: application/sdp`). Authenticated **`X-User-Id`**. Forwards multipart (`sdp`,`session`) to OpenAI **`POST /v1/realtime/calls`** (see OpenAI unified WebRTC Realtime docs) and returns **answer SDP** as `application/sdp`. **`OPENAI_API_KEY`** plus **`OPENAI_REALTIME_*`**/`FRIDAY_REALTIME_INSTRUCTIONS` configure upstream. **Bypasses orchestration/tool policies** today — use text/WebSocket + planner until Realtime MCP / server intercept is wired.
 
+## Speech (Coqui path)
+
+Auth header **`X-User-Id`** (development).
+
+- **`POST /speech/coqui/tts`** — Body **`{"text": string}`** (≤ ~520 chars per request — chunk longer turns client-side). Synthesis backend is selected with **`COQUI_TTS_BACKEND`**:
+  - **`remote`** — Proxies XTTS-compatible Studio HTTP (**`Bearer` `COQUI_API_TOKEN`** + **`COQUI_VOICE_ID`**) against **`COQUI_API_BASE_URL`**. Deprecated if the host is down.
+  - **`local_http`** — **`POST {COQUI_LOCAL_TTS_URL}/v1/synthesize`** JSON **`{ text, language, speed }`**; expects **`audio/wav`** (see **`services/coqui-local-tts/`** + **`scripts/run-coqui-local-tts.sh`**). **`COQUI_API_TOKEN`** / **`COQUI_VOICE_ID`** are unused in this mode.
+- **`POST /speech/coqui/wake-scan`** — **`multipart/form-data`** field **`file`** — short microphone clip (~0.8–4s). Runs the same Whisper-class STT as session **`/transcribe`**, then matches **`FRIDAY_WAKE_PHRASES`** (comma-separated). Response **`{"text": string, "triggered": boolean}`**. Empty transcripts **`422`** (client should shorten/retry clips).
+
 ## Memory
 
 Auth header `X-User-Id` (development).

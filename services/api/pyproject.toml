@@ -51,6 +51,7 @@ omit = [
     "*/friday_api/services/local_tool_inputs.py",
     "*/friday_api/services/speech_transcription.py",
     "*/friday_api/services/realtime_openai.py",
+    "*/friday_api/services/coqui_xtts.py",
 ]
 
 [tool.coverage.report]

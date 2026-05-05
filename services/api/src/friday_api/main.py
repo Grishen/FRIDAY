@@ -28,6 +28,7 @@ from friday_api.routers import (
     notifications as notifications_routes,
     sessions,
     smart_home as smart_home_routes,
+    speech_coqui,
     tools_rest,
     workflows as workflows_routes,
     ws,
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(meta_routes.router, prefix=settings.api_prefix)
     app.include_router(auth_stub.router, prefix=settings.api_prefix)
     app.include_router(sessions.router, prefix=settings.api_prefix)
+    app.include_router(speech_coqui.router, prefix=settings.api_prefix)
     app.include_router(tools_rest.router, prefix=settings.api_prefix)
     app.include_router(memory_routes.router, prefix=settings.api_prefix)
     app.include_router(documents_routes.router, prefix=settings.api_prefix)

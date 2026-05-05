@@ -37,16 +37,28 @@ async def exchange_realtime_webrtc_sdp(
 
     async with httpx.AsyncClient(timeout=timeout_s) as client:
         try:
+            # Match browser FormData.set("sdp", rawSdpText) — field name sdp must appear as a form part,
+            # not only as Content-Disposition file upload (OpenAI rejects with "sdp required but not found").
+            # Use str payloads (like browser FormData) — avoids empty/corrupt parts some stacks see with raw bytes + mime.
             resp = await client.post(
                 url,
                 headers=headers,
-                files={
-                    "sdp": ("offer.sdp", sdp_offer.encode("utf-8"), "application/sdp"),
-                    "session": ("session.json", session_blob.encode("utf-8"), "application/json"),
-                },
+                files=[
+                    ("sdp", (None, sdp_offer, "application/sdp")),
+                    ("session", (None, session_blob, "application/json")),
+                ],
             )
         except httpx.RequestError as exc:
             log.warning("realtime_calls_request_error", detail=str(exc)[:400])
             return 503, ""
+
+    if resp.status_code < 200 or resp.status_code >= 300:
+        body_snip = resp.text[:900].replace("\n", " ").strip()
+        log.warning(
+            "realtime_calls_upstream_error",
+            status=resp.status_code,
+            body=body_snip,
+            url=str(resp.request.url if resp.request else url),
+        )
 
     return resp.status_code, resp.text

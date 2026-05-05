@@ -69,6 +69,34 @@ class Settings(BaseSettings):
             "friday_realtime_instructions",
         ),
     )
+    # Coqui TTS — `remote` (legacy Studio HTTP) or `local_http` (sidecar in services/coqui-local-tts).
+    coqui_tts_backend: str = Field(
+        default="remote",
+        validation_alias=AliasChoices("COQUI_TTS_BACKEND", "coqui_tts_backend"),
+    )
+    coqui_local_tts_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("COQUI_LOCAL_TTS_URL", "coqui_local_tts_url"),
+    )
+    # Remote Studio (discontinued): Bearer + voice id; still supported if a compatible host exists.
+    coqui_api_token: str = Field(default="", validation_alias=AliasChoices("COQUI_API_TOKEN", "coqui_api_token"))
+    coqui_voice_id: str = Field(default="", validation_alias=AliasChoices("COQUI_VOICE_ID", "coqui_voice_id"))
+    coqui_api_base_url: str = Field(
+        default="https://app.coqui.ai",
+        validation_alias=AliasChoices("COQUI_API_BASE_URL", "coqui_api_base_url"),
+    )
+    coqui_language: str = Field(default="en", validation_alias=AliasChoices("COQUI_LANGUAGE", "coqui_language"))
+    coqui_tts_speed: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        validation_alias=AliasChoices("COQUI_TTS_SPEED", "coqui_tts_speed"),
+    )
+    # Comma-separated phrases for phrase-wake (STT substring / word-boundary for single tokens).
+    friday_wake_phrases_csv: str = Field(
+        default="friday, hey friday, hey buddy friday",
+        validation_alias=AliasChoices("FRIDAY_WAKE_PHRASES", "friday_wake_phrases_csv"),
+    )
     # Governed host automation — sandboxed filesystem + allowlisted GUI apps only.
     friday_local_workspace: str = Field(
         default="",

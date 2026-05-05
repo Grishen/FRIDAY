@@ -32,9 +32,9 @@ async def transcribe_audio_bytes(
     if len(data) > s.stt_max_upload_bytes:
         raise TranscriptionConfigError("audio_too_large")
 
-    if os.environ.get("FRIDAY_PYTEST") == "1" and not (s.openai_api_key or "").strip():
-        # Deterministic path for API tests without billing a real Whisper call.
-        return "mock stt from friday pytest"
+    if os.environ.get("FRIDAY_PYTEST") == "1":
+        # Deterministic path for tests; ignores placeholder keys often present in local `.env`.
+        return "mock stt transcription for pytest"
 
     key = (s.openai_api_key or "").strip()
     if not key:

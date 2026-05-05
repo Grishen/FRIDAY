@@ -16,7 +16,7 @@ async def test_realtime_webrtc_requires_api_key(
     monkeypatch: pytest.MonkeyPatch,
     async_client: httpx.AsyncClient,
 ) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     get_settings.cache_clear()
     try:
         r_sess = await async_client.post("/api/v1/sessions", json={"title": "rt"}, headers=auth_headers)

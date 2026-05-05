@@ -46,3 +46,12 @@ class MessageOut(BaseModel):
 
 class TranscribeOut(BaseModel):
     text: str
+
+
+class CoquiTtsRequest(BaseModel):
+    text: str
+
+
+class WakePhraseScanOut(BaseModel):
+    text: str
+    triggered: bool = False

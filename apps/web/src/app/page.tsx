@@ -109,12 +109,13 @@ export default function Home() {
         resetStreamingAssistant();
         appendMessage({ role: "assistant", content });
         if (useFridayStore.getState().speakAssistantReplies) {
-          speakFriday(
-            content,
-            duplexLiteMic && sttMode === "browser"
-              ? () => voiceRef.current?.kickAfterAssistantSpeak()
-              : undefined,
-          );
+          speakFriday(content, {
+            userId,
+            onEnd:
+              duplexLiteMic && sttMode === "browser"
+                ? () => voiceRef.current?.kickAfterAssistantSpeak()
+                : undefined,
+          });
         }
         if (meta && typeof meta === "object" && meta !== null && "tools" in meta) {
           const tools = (
@@ -230,12 +231,13 @@ export default function Home() {
               appendMessage({ role: "assistant", content });
               setPhase("done");
               if (useFridayStore.getState().speakAssistantReplies) {
-                speakFriday(
-                  content,
-                  duplexLiteMic && sttMode === "browser"
-                    ? () => voiceRef.current?.kickAfterAssistantSpeak()
-                    : undefined,
-                );
+                speakFriday(content, {
+                  userId,
+                  onEnd:
+                    duplexLiteMic && sttMode === "browser"
+                      ? () => voiceRef.current?.kickAfterAssistantSpeak()
+                      : undefined,
+                });
               }
             },
           });
@@ -252,12 +254,13 @@ export default function Home() {
             appendMessage({ role: "assistant", content: assistant.content });
             setPhase("done");
             if (useFridayStore.getState().speakAssistantReplies) {
-              speakFriday(
-                assistant.content,
-                duplexLiteMic && sttMode === "browser"
-                  ? () => voiceRef.current?.kickAfterAssistantSpeak()
-                  : undefined,
-              );
+              speakFriday(assistant.content, {
+                userId,
+                onEnd:
+                  duplexLiteMic && sttMode === "browser"
+                    ? () => voiceRef.current?.kickAfterAssistantSpeak()
+                    : undefined,
+              });
             }
           } catch {
             resetStreamingAssistant();

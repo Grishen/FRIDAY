@@ -246,8 +246,11 @@ async def realtime_webrtc_sdp_offer(
         sdp_offer = raw.decode("utf-8")
     except UnicodeDecodeError as e:
         raise HTTPException(status_code=400, detail="invalid sdp encoding") from e
-    sdp_offer = sdp_offer.strip()
-    if not sdp_offer:
+    # Do not `.strip()` the whole SDP: trailing newlines are part of the wire format and
+    # stripping breaks OpenAI's parser ("failed to unmarshal SDP: EOF").
+    if sdp_offer.startswith("\ufeff"):
+        sdp_offer = sdp_offer[1:]
+    if not sdp_offer.strip():
         raise HTTPException(status_code=400, detail="empty sdp")
 
     session_payload: dict[str, object] = {

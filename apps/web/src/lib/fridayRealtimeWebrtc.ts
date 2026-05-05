@@ -30,6 +30,13 @@ export async function negotiateFridayRealtimeDuplex(params: {
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
+  /** Prefer `offer.sdp` — `localDescription` can lag or be empty in some browsers right after setLocalDescription. */
+  const sdpPayload = typeof offer.sdp === "string" && offer.sdp.length > 0 ? offer.sdp : (pc.localDescription?.sdp ?? "");
+  if (!sdpPayload.trim()) {
+    stream.getTracks().forEach((t) => t.stop());
+    pc.close();
+    throw new Error("WebRTC offer SDP empty — microphone or peer connection unavailable.");
+  }
 
   const resp = await fetch(`${apiBase}/api/v1/sessions/${encodeURIComponent(params.sessionId)}/realtime/webrtc`, {
     method: "POST",
@@ -38,7 +45,7 @@ export async function negotiateFridayRealtimeDuplex(params: {
       Accept: "application/sdp,text/plain;q=0.9,*/*;q=0.8",
       "X-User-Id": params.userId,
     },
-    body: pc.localDescription?.sdp ?? "",
+    body: sdpPayload,
   });
 
   const answerText = await resp.text();

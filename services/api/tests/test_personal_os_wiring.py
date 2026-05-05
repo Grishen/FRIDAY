@@ -45,7 +45,8 @@ def test_safe_join_rejects_absolute() -> None:
         safe_join_workspace(Path("/tmp/ws"), "/etc/passwd")
 
 
-def test_factory_returns_mock_when_no_api_key() -> None:
+def test_factory_returns_mock_when_no_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     s = Settings()
     p = get_chat_provider(s)
     assert isinstance(p, MockChatProvider)
