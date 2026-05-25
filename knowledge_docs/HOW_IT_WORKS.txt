@@ -1,0 +1,13 @@
+JARVIS local knowledge base (RAG)
+
+Add your own text here as .txt or .md files in this folder (or subfolders).
+Examples: manuals, reminders, lore, FAQs, specs.
+
+Say things like:
+
+  "Jarvis search my notes about vacation plans"
+  "What does my knowledge base say about the project timeline?"
+  "From my documents what's the wifi password phrase"
+
+Recommended: set OPENAI_API_KEY for better retrieval answers (optional but much nicer).
+Otherwise Jarvis speaks the closest raw text from your files.

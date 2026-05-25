@@ -1,0 +1,17 @@
+# Core deps for bare `python main.py` voice loop (beyond stdlib).
+# PyAudio/wheels often need an extra Windows step — see docs/WINDOWS.md.
+
+speechrecognition>=3.10.0
+pyttsx3>=2.90
+PyAutoGUI>=0.9
+pywhatkit>=5.8
+wikipedia>=1.4
+pyjokes>=0.6
+requests>=2.31
+urllib3>=2.0
+speedtest-cli>=2.1
+psutil>=5.9
+# PyAudio>=0.2          # uncomment after grabbing a compatible wheel build
+# Heavy / optional originals from classic Jarvis readme (install manually if desired):
+# wolframalpha
+# googleapi (Google-Search-API)

@@ -1,0 +1,2 @@
+# Optional: free Microsoft neural voices online (see jarvis_edge_tts.py)
+edge-tts>=7.0.0

@@ -1,0 +1,9 @@
+# RAG stack (pip install -r requirements-rag.txt)
+
+chromadb>=0.5.5
+openai>=1.30.0
+sentence-transformers>=2.2.0
+
+# Postgres + pgvector backend (optional: set JARVIS_VECTOR_BACKEND=postgres)
+psycopg[binary]>=3.2.0
+pgvector>=0.3.6

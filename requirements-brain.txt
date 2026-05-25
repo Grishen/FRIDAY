@@ -1,0 +1,2 @@
+# OpenAI tool-agent brain (voice fallback + conversational control)
+openai>=1.30.0
