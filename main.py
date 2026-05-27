@@ -124,6 +124,13 @@ if voices:
 
 def speak(text):
     print("Command: " + text)
+    try:
+        from memory.episodic_memory import memory_append_turn
+
+        memory_append_turn("assistant", str(text))
+    except Exception:
+        # Speech should never fail just because memory storage is unavailable.
+        pass
     force_local = os.environ.get("JARVIS_USE_LOCAL_TTS", "").lower() in ("1", "true", "yes")
     eleven_only = os.environ.get("JARVIS_ELEVENLABS_ONLY", "").lower() in ("1", "true", "yes")
     if not force_local and elevenlabs_tts.is_configured():
@@ -558,20 +565,21 @@ def process_command(query: str, voice_raw: Optional[str] = None) -> None:
 
     else:
         if jb is not None and jb.is_brain_enabled():
-            from memory.episodic_memory import memory_append_turn, memory_fetch_block
+            from memory.episodic_memory import (
+                memory_auto_capture_user_profile,
+                memory_build_context_for_prompt,
+            )
 
             utterance = voice_raw.strip() if voice_raw else query
             try:
-                episodic_prefill = memory_fetch_block()
+                memory_auto_capture_user_profile(utterance)
+                episodic_prefill = memory_build_context_for_prompt(query=utterance)
                 reply = jb.run_agent_brain(
                     user_utterance=utterance,
                     episodic_prefill=episodic_prefill,
                 )
                 if reply:
                     speak(reply)
-                memory_append_turn("user", utterance)
-                if reply:
-                    memory_append_turn("assistant", reply.strip())
             except JarvisExitRequest:
                 speak("Thanks for giving me your precious time Sir")
                 raise
@@ -616,6 +624,13 @@ def run_voice_session(
             if query == "none":
                 continue
             try:
+                from memory.episodic_memory import (
+                    memory_append_turn,
+                    memory_auto_capture_user_profile,
+                )
+
+                memory_append_turn("user", raw)
+                memory_auto_capture_user_profile(raw)
                 process_command(query, voice_raw=raw)
             except JarvisExitRequest:
                 break

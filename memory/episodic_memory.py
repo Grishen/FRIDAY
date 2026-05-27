@@ -15,6 +15,7 @@ Env:
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -26,6 +27,34 @@ _SQLITE_PATH = _DATA / "jarvis_memory.sqlite"
 
 _PG_LOCK = threading.Lock()
 _SQL_LOCK = threading.Lock()
+_TOKEN_RE = re.compile(r"[a-zA-Z0-9']+")
+_PROFILE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bmy name is ([a-z][a-z .'-]{1,40})\b", re.IGNORECASE), "name"),
+    (
+        re.compile(r"\bi(?:'m| am) ([a-z][a-z .'-]{1,40})\b", re.IGNORECASE),
+        "identity",
+    ),
+    (
+        re.compile(r"\bi live in ([a-z0-9 ,.'-]{2,60})\b", re.IGNORECASE),
+        "location",
+    ),
+    (
+        re.compile(r"\bi work as (?:an? )?([a-z0-9 ,.'-]{2,60})\b", re.IGNORECASE),
+        "work",
+    ),
+    (
+        re.compile(r"\bmy birthday is ([a-z0-9 ,/-]{2,30})\b", re.IGNORECASE),
+        "birthday",
+    ),
+    (
+        re.compile(r"\bi (?:like|love|enjoy) ([a-z0-9 ,.'-]{2,80})\b", re.IGNORECASE),
+        "preference",
+    ),
+    (
+        re.compile(r"\bi (?:prefer|usually prefer) ([a-z0-9 ,.'-]{2,80})\b", re.IGNORECASE),
+        "preference",
+    ),
+]
 
 
 def _memory_backend_pref() -> str:
@@ -93,6 +122,99 @@ def memory_append_turn(role: str, content: str) -> None:
         _pg_append(role_clean, text)
         return
     _sqlite_append(role_clean, text)
+
+
+def _tokenize(text: str) -> set[str]:
+    return {
+        token.lower()
+        for token in _TOKEN_RE.findall(text)
+        if len(token) > 2 and token.lower() not in {"the", "and", "for", "with"}
+    }
+
+
+def _looks_like_profile_note(text: str) -> bool:
+    return text.lower().startswith("profile:")
+
+
+def memory_auto_capture_user_profile(user_text: str) -> list[str]:
+    """Extract simple user profile/event facts and store as note rows."""
+    utterance = (user_text or "").strip()
+    if not utterance:
+        return []
+    rows = memory_recent_rows(limit=220)
+    existing_notes = {
+        content.strip().lower() for role, content in rows if role == "note" and content.strip()
+    }
+    captured: list[str] = []
+    for pattern, field in _PROFILE_PATTERNS:
+        match = pattern.search(utterance)
+        if not match:
+            continue
+        value = re.sub(r"\s+", " ", match.group(1)).strip(" .,!?:;")
+        if not value:
+            continue
+        note = f"profile:{field}={value}"
+        if note.lower() in existing_notes:
+            continue
+        memory_append_turn("note", note)
+        existing_notes.add(note.lower())
+        captured.append(note)
+    # Capture explicit "remember ..." lines as durable events.
+    low = utterance.lower()
+    if "remember" in low and len(utterance) > 20:
+        note = f"event: {utterance[:240]}"
+        if note.lower() not in existing_notes:
+            memory_append_turn("note", note)
+            captured.append(note)
+    return captured
+
+
+def memory_build_context_for_prompt(
+    *,
+    query: str,
+    recent_lines: int | None = None,
+    candidate_pool: int = 260,
+    max_chars: int = 7000,
+) -> str:
+    """
+    Build richer prompt memory:
+    - profile notes (durable)
+    - relevant older memories by token overlap with current query
+    - most recent conversation rows
+    """
+    recent_block = memory_fetch_block(
+        max_lines=recent_lines or memory_default_line_limit(),
+        max_chars=max_chars // 2,
+    )
+    rows = memory_recent_rows(limit=max(80, candidate_pool))
+    query_tokens = _tokenize(query)
+    profile_notes: list[str] = []
+    scored: list[tuple[int, str, str]] = []
+    for role, text in rows:
+        clean = (text or "").strip().replace("\n", " ")
+        if not clean:
+            continue
+        if _looks_like_profile_note(clean):
+            profile_notes.append(clean)
+            continue
+        row_tokens = _tokenize(clean)
+        overlap = len(query_tokens.intersection(row_tokens))
+        if overlap:
+            scored.append((overlap, role, clean))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    picked = scored[:8]
+
+    chunks: list[str] = []
+    if profile_notes:
+        unique_profiles = list(dict.fromkeys(profile_notes))[-8:]
+        chunks.append("Known user profile facts:\n" + "\n".join(f"- {p}" for p in unique_profiles))
+    if picked:
+        rel_lines = [f"- [{role}] {text}" for _, role, text in picked]
+        chunks.append("Relevant older memories:\n" + "\n".join(rel_lines))
+    if recent_block:
+        chunks.append("Recent conversation:\n" + recent_block)
+    out = "\n\n".join(chunks).strip()
+    return out[:max_chars]
 
 
 def memory_recent_rows(*, limit: int) -> list[tuple[str, str]]:
