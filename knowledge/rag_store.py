@@ -21,10 +21,12 @@ Env:
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
 from knowledge import fs_index
+from knowledge.retrieval import expand_query, hybrid_rerank, merge_unique_results
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _CHROMA_DIR = _DATA_DIR / "jarvis_chroma"
@@ -123,7 +125,7 @@ def _collection_document_count(collection) -> int:
             return 0
 
 
-def _retrieve(question: str, collection, k: int = 6) -> tuple[list[str], list[str]]:
+def _retrieve(question: str, collection, k: int = 10) -> tuple[list[str], list[str]]:
     cnt = _collection_document_count(collection)
     if cnt == 0:
         return [], []
@@ -140,15 +142,102 @@ def _retrieve(question: str, collection, k: int = 6) -> tuple[list[str], list[st
     return docs, src_labels
 
 
+def _retrieve_hybrid(question: str, collection, *, pool_k: int = 10, top_k: int = 6) -> tuple[list[str], list[str]]:
+    docs_a, src_a = _retrieve(question, collection, k=pool_k)
+    expanded = " ".join(sorted(expand_query(question)))
+    if expanded and expanded.lower() != question.strip().lower():
+        docs_b, src_b = _retrieve(expanded, collection, k=pool_k)
+        merged_docs, merged_src = merge_unique_results(
+            docs_a, src_a, docs_b, src_b, max_total=pool_k * 2
+        )
+    else:
+        merged_docs, merged_src = docs_a, src_a
+    return hybrid_rerank(question, merged_docs, merged_src, top_k=top_k)
+
+
+def knowledge_document_count() -> int:
+    root = fs_index.knowledge_dir()
+    return len(fs_index.collect_files(root))
+
+
+def knowledge_indexed_chunk_count() -> int:
+    if _vector_backend() == "postgres":
+        from knowledge import postgres_kb
+
+        return postgres_kb.indexed_chunk_count()
+    return _collection_document_count(_collection())
+
+
+def force_resync_knowledge() -> int:
+    """Force a full re-index regardless of manifest state."""
+    if _vector_backend() == "postgres":
+        from knowledge import postgres_kb
+
+        root = fs_index.knowledge_dir()
+        files = fs_index.collect_files(root)
+        state = fs_index.manifest_state(files)
+        fs_index.write_manifest({})  # force mismatch
+        return postgres_kb.sync_from_disk()
+
+    root = fs_index.knowledge_dir()
+    files = fs_index.collect_files(root)
+    state = fs_index.manifest_state(files)
+    fs_index.write_manifest({})
+    col = _collection(reset=True)
+    ids: list[str] = []
+    documents: list[str] = []
+    metadatas: list[dict] = []
+    n = 0
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        try:
+            rel = str(path.relative_to(root))
+        except ValueError:
+            rel = path.name
+        for i, chunk in enumerate(fs_index.chunk_text(text)):
+            cid = hashlib.sha256(f"{rel}|{i}|{chunk[:80]}".encode()).hexdigest()[:40]
+            ids.append(cid)
+            documents.append(chunk)
+            metadatas.append({"source": rel, "chunk": str(i)})
+            n += 1
+    if documents:
+        col.add(ids=ids, documents=documents, metadatas=metadatas)
+    fs_index.write_manifest(state)
+    fs_index.write_vector_backend_marker("chroma")
+    return n
+
+
+def describe_knowledge_for_voice() -> str:
+    root = fs_index.knowledge_dir()
+    docs = knowledge_document_count()
+    chunks = knowledge_indexed_chunk_count()
+    backend = _vector_backend()
+    return (
+        f"Knowledge base status: backend {backend}, folder {root}, "
+        f"{docs} source files indexed into {chunks} chunks."
+    )
+
+
 def _synthesize_with_openai(question: str, context: str) -> str:
     from openai import OpenAI
+
+    try:
+        from jarvis_brain import brain_system_instructions
+    except ImportError:
+        def brain_system_instructions() -> str:  # type: ignore[misc]
+            return "You are a helpful voice assistant. Be natural, concise, and grounded."
 
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o-mini")
     msg = (
-        "You are JARVIS. Answer the user clearly and concisely using ONLY the CONTEXT. "
-        "If the answer is not in the context, say you do not have that in the loaded documents. "
-        "Do not invent facts. Keep under about 8 sentences for speech."
+        brain_system_instructions()
+        + "\n\nYou are answering from the user's LOCAL DOCUMENTS only. "
+        "Use ONLY the provided CONTEXT. If the answer is missing, say so plainly and suggest "
+        "what document or detail would help. Do not invent facts. "
+        "Sound natural for speech: warm, clear, and human — not robotic."
     )
     completion = client.chat.completions.create(
         model=model,
@@ -159,7 +248,7 @@ def _synthesize_with_openai(question: str, context: str) -> str:
                 "content": f"CONTEXT:\n{context}\n\nQUESTION:\n{question}",
             },
         ],
-        temperature=0.2,
+        temperature=0.35,
     )
     content = getattr(completion.choices[0].message, "content", None)
     reply = (content or "").strip()
@@ -186,7 +275,8 @@ def answer_from_knowledge(question: str) -> str:
                     "There are no indexed documents yet, Sir. Add text or markdown files under "
                     f"{kb_root} and say a knowledge command again."
                 )
-            chunks, sources = postgres_kb.postgres_retrieve(question, k=6)
+            raw_chunks, raw_sources = postgres_kb.postgres_retrieve(question, k=10)
+            chunks, sources = hybrid_rerank(question, raw_chunks, raw_sources, top_k=6)
         except Exception as exc:
             return (
                 f"Sir, Postgres knowledge lookup failed ({exc}). "
@@ -200,7 +290,7 @@ def answer_from_knowledge(question: str) -> str:
                 "There are no indexed documents yet, Sir. Add text or markdown files under "
                 f"{kb_root} and say a knowledge command again."
             )
-        chunks, sources = _retrieve(question, collection, k=6)
+        chunks, sources = _retrieve_hybrid(question, collection, pool_k=10, top_k=6)
 
     if not chunks:
         return "I could not find relevant passages in your documents, Sir."

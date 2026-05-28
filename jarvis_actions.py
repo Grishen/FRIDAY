@@ -46,7 +46,7 @@ def google_search(query: str) -> str:
     return f"Opened Google results for: {q}"
 
 
-def wikipedia_summary(topic: str) -> str:
+def wikipedia_summary(topic: str, *, sentences: int = 3) -> str:
     topic = topic.strip()
     if not topic:
         return "No topic provided."
@@ -56,10 +56,38 @@ def wikipedia_summary(topic: str) -> str:
     except ImportError:
         return "Wikipedia library not installed."
 
+    s = max(1, min(20, int(sentences or 3)))
     try:
-        return wikipedia.summary(topic, sentences=3)
+        return wikipedia.summary(topic, sentences=s, auto_suggest=True, redirect=True)
     except Exception as exc:  # noqa: BLE001
-        return f"Wikipedia lookup failed: {exc}"
+        # Try to disambiguate or suggest related pages.
+        msg = str(exc)
+        options: list[str] = []
+        try:
+            options = list(wikipedia.search(topic, results=5)) or []
+        except Exception:
+            options = []
+        if options:
+            return (
+                f"Wikipedia could not directly answer ({msg[:120]}). "
+                f"Closest topics: {', '.join(options[:5])}."
+            )
+        return f"Wikipedia lookup failed: {msg}"
+
+
+def wikipedia_related(topic: str, *, limit: int = 6) -> list[str]:
+    topic = (topic or "").strip()
+    if not topic:
+        return []
+    try:
+        import wikipedia
+    except ImportError:
+        return []
+    try:
+        results = wikipedia.search(topic, results=max(1, min(15, limit)))
+        return [str(r) for r in results]
+    except Exception:
+        return []
 
 
 def current_time_display() -> str:
@@ -141,6 +169,23 @@ def open_application(application: str) -> str:
         return f"Unsupported application shortcut: '{application}'. Try notepad, terminal, vscode, or calculator."
 
     return msg
+
+
+def open_application_by_name(application: str) -> str:
+    """Try macOS ``open -a`` for arbitrary app names; else use known shortcuts."""
+    name = (application or "").strip()
+    if not name:
+        return "Which application should I open?"
+    if sys.platform == "darwin":
+        last_err = ""
+        for candidate in (name, name.title(), name.capitalize()):
+            res = subprocess.run(["open", "-a", candidate], capture_output=True, text=True)
+            if res.returncode == 0:
+                return f"Opening {candidate}."
+            last_err = (res.stderr or res.stdout or "").strip()
+        suffix = f" {last_err[:80]}" if last_err else ""
+        return f"Could not open '{name}'.{suffix}"
+    return open_application(name)
 
 
 def volume_action(action: str) -> str:

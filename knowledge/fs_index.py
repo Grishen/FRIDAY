@@ -63,7 +63,19 @@ def collect_files(root: Path) -> list[Path]:
     if not root.is_dir():
         return []
     out: list[Path] = []
-    for pat in ("**/*.txt", "**/*.md"):
+    # Include common text-heavy formats so the knowledge base can grow without conversions.
+    for pat in (
+        "**/*.txt",
+        "**/*.md",
+        "**/*.markdown",
+        "**/*.rst",
+        "**/*.log",
+        "**/*.csv",
+        "**/*.json",
+        "**/*.yaml",
+        "**/*.yml",
+        "**/*.py",
+    ):
         out.extend(root.glob(pat))
     return sorted({p.resolve() for p in out if p.is_file()})
 

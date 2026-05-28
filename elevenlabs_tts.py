@@ -11,8 +11,9 @@ import tempfile
 import requests
 
 
-def _parse_env_file(path: str) -> None:
-    """Load KEY=value pairs into os.environ if not already set (no python-dotenv required)."""
+def _parse_env_file(path: str) -> int:
+    """Load KEY=value pairs into os.environ if not already set. Returns count loaded."""
+    n = 0
     with open(path, encoding="utf-8") as f:
         for raw in f:
             line = raw.strip()
@@ -23,22 +24,56 @@ def _parse_env_file(path: str) -> None:
             if not key or key in os.environ:
                 continue
             val = val.strip().strip('"').strip("'")
+            if not val:
+                # Skip empty placeholders so they don't shadow real values.
+                continue
             os.environ[key] = val
+            n += 1
+    return n
+
+
+_LOADED_ENV_FROM: str = ""
 
 
 def _load_dotenv_if_present() -> None:
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if not os.path.isfile(env_path):
+    """
+    Load `.env` if present; else fall back to `.env.template`. This is forgiving
+    so users who fill in `.env.template` directly still get their keys loaded
+    (with a clear warning recommending the proper rename).
+    """
+    global _LOADED_ENV_FROM
+    here = os.path.dirname(os.path.abspath(__file__))
+    primary = os.path.join(here, ".env")
+    template = os.path.join(here, ".env.template")
+
+    target: str | None = None
+    if os.path.isfile(primary):
+        target = primary
+    elif os.path.isfile(template):
+        target = template
+        print(
+            "[env] No .env found — loading .env.template instead. "
+            "Recommended: `cp .env.template .env` so future updates to the template don't affect you."
+        )
+
+    if not target:
         return
+
     try:
         from dotenv import load_dotenv
 
-        load_dotenv(env_path)
+        load_dotenv(target)
+        _LOADED_ENV_FROM = target
     except ImportError:
-        _parse_env_file(env_path)
+        if _parse_env_file(target) > 0:
+            _LOADED_ENV_FROM = target
 
 
 _load_dotenv_if_present()
+
+
+def loaded_env_path() -> str:
+    return _LOADED_ENV_FROM
 
 
 def is_configured() -> bool:
