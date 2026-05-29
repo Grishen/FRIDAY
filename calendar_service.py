@@ -1,16 +1,16 @@
 """Calendar read/write helpers.
 
-macOS: native via AppleScript / ``osascript`` against Calendar.app. No
-external dependencies, no API keys. Read events from any visible calendar,
-create events into a configurable calendar (default: "Home" or the first
-writable calendar).
+Backends (``JARVIS_CALENDAR_BACKEND``):
 
-Other platforms: degrades gracefully to a clear ``not supported`` message.
+- ``auto`` (default) — CalDAV when configured, else macOS Calendar.app on Darwin
+- ``caldav`` — Google Calendar / iCloud / any CalDAV server (see ``calendar_caldav.py``)
+- ``macos`` — native AppleScript against Calendar.app (Darwin only)
 
 Env:
 
-- ``JARVIS_CALENDAR_NAME`` — preferred calendar to write into (default tries
-  ``Home`` then the first calendar exposed by Calendar.app).
+- ``JARVIS_CALENDAR_BACKEND`` — auto | caldav | macos
+- ``JARVIS_CALENDAR_NAME`` — preferred calendar to write into (macOS / CalDAV name)
+- ``JARVIS_CALDAV_URL`` / ``JARVIS_CALDAV_USERNAME`` / ``JARVIS_CALDAV_PASSWORD``
 """
 
 from __future__ import annotations
@@ -26,6 +26,42 @@ from typing import Optional
 def _is_macos() -> bool:
     return sys.platform == "darwin"
 
+
+def _backend() -> str:
+    mode = (os.environ.get("JARVIS_CALENDAR_BACKEND", "auto") or "auto").strip().lower()
+    if mode == "caldav":
+        try:
+            from calendar_caldav import caldav_available
+
+            return "caldav" if caldav_available() else ""
+        except Exception:
+            return ""
+    if mode == "macos":
+        return "macos" if _is_macos() and _macos_available() else ""
+    # auto
+    try:
+        from calendar_caldav import caldav_configured, caldav_available
+
+        if caldav_configured() and caldav_available():
+            return "caldav"
+    except Exception:
+        pass
+    if _is_macos() and _macos_available():
+        return "macos"
+    return ""
+
+
+def calendar_backend_name() -> str:
+    """Human-readable active backend (empty if none)."""
+    b = _backend()
+    if b == "caldav":
+        return "CalDAV"
+    if b == "macos":
+        return "macOS Calendar"
+    return ""
+
+
+# ---------- macOS implementation ----------
 
 def _osascript(script: str, *, timeout: float = 12.0) -> tuple[bool, str]:
     try:
@@ -54,12 +90,9 @@ def _preferred_calendar_name() -> str:
 
 
 def _calendar_picker_clause() -> str:
-    """AppleScript snippet that binds ``targetCal`` to a writable calendar."""
     preferred = _preferred_calendar_name()
     if preferred:
-        return (
-            f'set targetCal to first calendar whose name is "{_esc(preferred)}"\n'
-        )
+        return f'set targetCal to first calendar whose name is "{_esc(preferred)}"\n'
     return (
         'set targetCal to missing value\n'
         'try\n'
@@ -71,50 +104,39 @@ def _calendar_picker_clause() -> str:
     )
 
 
-# ---------- public API ----------
-
-def calendar_available() -> bool:
-    """Quick check that Calendar.app is usable on this machine."""
+def _macos_available() -> bool:
     if not _is_macos():
         return False
     ok, _ = _osascript('tell application "Calendar" to count calendars')
     return ok
 
 
-def calendar_today_events(*, limit: int = 8) -> list[dict[str, str]]:
-    """List events occurring today across all visible calendars (macOS)."""
-    if not _is_macos():
-        return []
+def _macos_today_events(*, limit: int = 8) -> list[dict[str, str]]:
     now = _dt.datetime.now()
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + _dt.timedelta(days=1)
-    return _events_between(start, end, limit=limit)
+    return _macos_events_between(start, end, limit=limit)
 
 
-def calendar_upcoming_events(*, hours: int = 24, limit: int = 8) -> list[dict[str, str]]:
-    if not _is_macos():
-        return []
+def _macos_upcoming_events(*, hours: int = 24, limit: int = 8) -> list[dict[str, str]]:
     start = _dt.datetime.now()
     end = start + _dt.timedelta(hours=max(1, min(72, hours)))
-    return _events_between(start, end, limit=limit)
+    return _macos_events_between(start, end, limit=limit)
 
 
-def calendar_recently_ended_events(
+def _macos_recently_ended_events(
     *,
     within_minutes: int = 20,
     grace_minutes: int = 2,
     limit: int = 5,
 ) -> list[dict[str, str]]:
-    """Events whose end time fell within the last ``within_minutes`` (after ``grace_minutes``)."""
-    if not _is_macos():
-        return []
     now = _dt.datetime.now()
     window_start = now - _dt.timedelta(minutes=max(1, within_minutes))
     grace_end = now - _dt.timedelta(minutes=max(0, grace_minutes))
-    return _events_ended_between(window_start, grace_end, now=now, limit=limit)
+    return _macos_events_ended_between(window_start, grace_end, now=now, limit=limit)
 
 
-def _events_between(
+def _macos_events_between(
     start: _dt.datetime,
     end: _dt.datetime,
     *,
@@ -164,14 +186,13 @@ def _events_between(
     return rows
 
 
-def _events_ended_between(
+def _macos_events_ended_between(
     start: _dt.datetime,
     grace_end: _dt.datetime,
     *,
     now: _dt.datetime,
     limit: int,
 ) -> list[dict[str, str]]:
-    """Return events whose end date is in [start, grace_end] (recently finished)."""
     sdate = start.strftime("%Y-%m-%d %H:%M:%S")
     edate = now.strftime("%Y-%m-%d %H:%M:%S")
     grace = grace_end.strftime("%Y-%m-%d %H:%M:%S")
@@ -220,17 +241,13 @@ def _events_ended_between(
     return rows
 
 
-def calendar_create_event(
+def _macos_create_event(
     *,
     title: str,
     start: _dt.datetime,
     duration_minutes: int = 30,
     notes: str = "",
 ) -> str:
-    """Create a Calendar.app event. Returns a human-readable result string."""
-    if not _is_macos():
-        return "Calendar integration is only available on macOS at the moment."
-
     title = (title or "").strip()
     if not title:
         return "Event title is required."
@@ -270,11 +287,13 @@ def calendar_create_event(
                 "start": start_dt.isoformat(),
                 "duration_minutes": duration_minutes,
                 "calendar": cal_used,
+                "backend": "macos",
             },
             undo_data={
                 "title": title,
                 "start": start_dt.isoformat(),
                 "calendar": cal_used,
+                "backend": "macos",
             },
         )
     except Exception:
@@ -282,6 +301,88 @@ def calendar_create_event(
     return (
         f"Event created in '{cal_used}': '{title}' at "
         f"{start_dt.strftime('%a %b %d %I:%M %p')} for {duration_minutes} min."
+    )
+
+
+# ---------- public API ----------
+
+def calendar_available() -> bool:
+    return bool(_backend())
+
+
+def calendar_today_events(*, limit: int = 8) -> list[dict[str, str]]:
+    backend = _backend()
+    if backend == "caldav":
+        from calendar_caldav import caldav_today_events
+
+        return caldav_today_events(limit=limit)
+    if backend == "macos":
+        return _macos_today_events(limit=limit)
+    return []
+
+
+def calendar_upcoming_events(*, hours: int = 24, limit: int = 8) -> list[dict[str, str]]:
+    backend = _backend()
+    if backend == "caldav":
+        from calendar_caldav import caldav_upcoming_events
+
+        return caldav_upcoming_events(hours=hours, limit=limit)
+    if backend == "macos":
+        return _macos_upcoming_events(hours=hours, limit=limit)
+    return []
+
+
+def calendar_recently_ended_events(
+    *,
+    within_minutes: int = 20,
+    grace_minutes: int = 2,
+    limit: int = 5,
+) -> list[dict[str, str]]:
+    backend = _backend()
+    if backend == "caldav":
+        from calendar_caldav import caldav_recently_ended_events
+
+        return caldav_recently_ended_events(
+            within_minutes=within_minutes,
+            grace_minutes=grace_minutes,
+            limit=limit,
+        )
+    if backend == "macos":
+        return _macos_recently_ended_events(
+            within_minutes=within_minutes,
+            grace_minutes=grace_minutes,
+            limit=limit,
+        )
+    return []
+
+
+def calendar_create_event(
+    *,
+    title: str,
+    start: _dt.datetime,
+    duration_minutes: int = 30,
+    notes: str = "",
+) -> str:
+    backend = _backend()
+    if backend == "caldav":
+        from calendar_caldav import caldav_create_event
+
+        return caldav_create_event(
+            title=title,
+            start=start,
+            duration_minutes=duration_minutes,
+            notes=notes,
+        )
+    if backend == "macos":
+        return _macos_create_event(
+            title=title,
+            start=start,
+            duration_minutes=duration_minutes,
+            notes=notes,
+        )
+    return (
+        "Calendar integration is not configured. On macOS use Calendar.app, or set "
+        "JARVIS_CALDAV_URL + credentials for Google/iCloud CalDAV."
     )
 
 
@@ -316,7 +417,6 @@ def parse_calendar_phrase(text: str) -> tuple[str, Optional[_dt.datetime], int]:
     now = _dt.datetime.now()
     base_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # day phrase
     day_match = re.search(r"\b(today|tomorrow|day after tomorrow)\b", body, re.I)
     if day_match:
         base_date += _dt.timedelta(days=_DAY_OFFSETS[day_match.group(1).lower()])
@@ -339,7 +439,6 @@ def parse_calendar_phrase(text: str) -> tuple[str, Optional[_dt.datetime], int]:
                 base_date += _dt.timedelta(days=offset)
                 body = (body[: weekday_match.start()] + body[weekday_match.end() :]).strip()
 
-    # time phrase
     time_dt: Optional[_dt.datetime] = None
     time_match = re.search(r"\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", body, re.I)
     if time_match:
@@ -356,7 +455,6 @@ def parse_calendar_phrase(text: str) -> tuple[str, Optional[_dt.datetime], int]:
                 time_dt += _dt.timedelta(days=1)
         body = (body[: time_match.start()] + body[time_match.end() :]).strip()
 
-    # duration
     duration_minutes = 30
     dur_match = re.search(
         r"\bfor\s+(\d{1,3})\s*(minute|minutes|mins|min|hour|hours|hr|hrs)\b",
@@ -374,11 +472,21 @@ def parse_calendar_phrase(text: str) -> tuple[str, Optional[_dt.datetime], int]:
     return title, time_dt, duration_minutes
 
 
+def calendar_unavailable_message() -> str:
+    return (
+        "Calendar is not configured. On macOS, use Calendar.app (default), or set "
+        "JARVIS_CALDAV_URL + credentials for Google/iCloud CalDAV "
+        "(pip install -r requirements-calendar.txt)."
+    )
+
+
 __all__ = [
     "calendar_available",
+    "calendar_backend_name",
     "calendar_create_event",
     "calendar_recently_ended_events",
     "calendar_today_events",
+    "calendar_unavailable_message",
     "calendar_upcoming_events",
     "parse_calendar_phrase",
 ]

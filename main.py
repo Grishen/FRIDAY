@@ -2314,10 +2314,10 @@ def process_command(query: str, voice_raw: Optional[str] = None) -> None:
         or query.startswith("what's on my calendar")
         or query.startswith("what is on my calendar")
     ):
-        from calendar_service import calendar_available, calendar_today_events
+        from calendar_service import calendar_available, calendar_today_events, calendar_unavailable_message
 
         if not calendar_available():
-            speak("Calendar is only available on macOS at the moment, Sir.")
+            speak(calendar_unavailable_message())
         else:
             items = calendar_today_events(limit=6)
             if not items:
@@ -2335,10 +2335,10 @@ def process_command(query: str, voice_raw: Optional[str] = None) -> None:
         or "next on my calendar" in query
         or "what's next on my calendar" in query
     ):
-        from calendar_service import calendar_available, calendar_upcoming_events
+        from calendar_service import calendar_available, calendar_upcoming_events, calendar_unavailable_message
 
         if not calendar_available():
-            speak("Calendar is only available on macOS at the moment, Sir.")
+            speak(calendar_unavailable_message())
         else:
             items = calendar_upcoming_events(hours=48, limit=6)
             if not items:
@@ -2356,12 +2356,12 @@ def process_command(query: str, voice_raw: Optional[str] = None) -> None:
         or query.startswith("new event ")
         or query.startswith("put on my calendar ")
     ):
-        from calendar_service import calendar_available
+        from calendar_service import calendar_available, calendar_unavailable_message
         from dialogue_state import get_pending_task
         from dialogue_tasks import maybe_open_incomplete_command, try_finish_calendar
 
         if not calendar_available():
-            speak_reply("Calendar is only available on macOS at the moment.")
+            speak_reply(calendar_unavailable_message())
         else:
             utterance = voice_raw or query
             result = try_finish_calendar(utterance)

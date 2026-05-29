@@ -1,0 +1,2 @@
+# Optional CalDAV calendar backend (Google Calendar, iCloud, etc.)
+caldav>=3.0.0

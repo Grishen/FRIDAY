@@ -2297,7 +2297,9 @@ def invoke_tool_named(name: str, arguments_json: str) -> str:
         from calendar_service import calendar_available, calendar_today_events
 
         if not calendar_available():
-            return "Calendar is not available on this device (macOS Calendar.app required)."
+            from calendar_service import calendar_unavailable_message
+
+            return calendar_unavailable_message()
         items = calendar_today_events(limit=10)
         if not items:
             return "No calendar events today."
@@ -2308,7 +2310,9 @@ def invoke_tool_named(name: str, arguments_json: str) -> str:
         from calendar_service import calendar_available, calendar_upcoming_events
 
         if not calendar_available():
-            return "Calendar is not available on this device (macOS Calendar.app required)."
+            from calendar_service import calendar_unavailable_message
+
+            return calendar_unavailable_message()
         try:
             hours = int(args.get("hours", 24))
         except (TypeError, ValueError):
@@ -2327,7 +2331,9 @@ def invoke_tool_named(name: str, arguments_json: str) -> str:
         )
 
         if not calendar_available():
-            return "Calendar is not available on this device (macOS Calendar.app required)."
+            from calendar_service import calendar_unavailable_message
+
+            return calendar_unavailable_message()
 
         title = str(args.get("title", "")).strip()
         when_text = str(args.get("when_text", "")).strip()

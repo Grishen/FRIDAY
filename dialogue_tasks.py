@@ -273,11 +273,11 @@ def _handle_email_task(slots: dict, raw: str) -> Optional[str]:
 
 
 def _handle_calendar_task(slots: dict, raw: str) -> Optional[str]:
-    from calendar_service import calendar_available, calendar_create_event, parse_calendar_phrase
+    from calendar_service import calendar_available, calendar_create_event, calendar_unavailable_message, parse_calendar_phrase
 
     if not calendar_available():
         close_task()
-        return f"Calendar is only available on macOS at the moment{_addr()}."
+        return f"{calendar_unavailable_message()}{_addr()}."
 
     missing = _missing_calendar_slots(slots)
     if not missing:
