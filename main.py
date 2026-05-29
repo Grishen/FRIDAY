@@ -1335,7 +1335,7 @@ def evaluate(op1, operation, op2):
     # return get_operator(operation)(op1, op2)
 
 # Voice commands often include "Jarvis", "the", etc. — normalize before matching.
-_STOPWORDS = {"the", "a", "an"}
+from voice_router import normalize_voice_query
 
 SITE_ALIASES = {
     "youtube": "https://www.youtube.com/",
@@ -1343,19 +1343,6 @@ SITE_ALIASES = {
     "gmail": "https://mail.google.com/",
     "github": "https://github.com/",
 }
-
-
-def normalize_voice_query(q: str) -> str:
-    if not q or q.strip().lower() == "none":
-        return "none"
-    q = q.lower().strip()
-    for noise in (
-        "hey friday", "hey jarvis", "hey", "jarvis", "friday",
-        "please", "can you", "okay", "ok",
-    ):
-        q = q.replace(noise, " ")
-    parts = [p for p in q.split() if p not in _STOPWORDS]
-    return " ".join(parts)
 
 
 def wants_site(q: str, site_kw: str) -> bool:

@@ -16,6 +16,30 @@ from jarvis_exceptions import JarvisExitRequest
 
 SpeakFn = Callable[[str], None]
 
+_STOPWORDS = {"the", "a", "an"}
+
+
+def normalize_voice_query(q: str) -> str:
+    """Strip wake words and filler from a voice transcript."""
+    if not q or q.strip().lower() == "none":
+        return "none"
+    q = q.lower().strip()
+    for noise in (
+        "hey friday",
+        "hey jarvis",
+        "hey",
+        "jarvis",
+        "friday",
+        "please",
+        "can you",
+        "okay",
+        "ok",
+    ):
+        q = q.replace(noise, " ")
+    parts = [p for p in q.split() if p not in _STOPWORDS]
+    cleaned = " ".join(parts).strip(" ,.;:!?-")
+    return cleaned or "none"
+
 
 def brain_first_enabled() -> bool:
     return os.environ.get("JARVIS_BRAIN_FIRST", "1").strip().lower() not in (
@@ -163,5 +187,6 @@ __all__ = [
     "help_text",
     "invoke_agent_brain",
     "is_fast_path",
+    "normalize_voice_query",
     "try_fast_path",
 ]
