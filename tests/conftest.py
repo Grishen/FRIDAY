@@ -1,7 +1,12 @@
-import os
+import sys
 from pathlib import Path
 
 import pytest
+
+# FRIDAY uses a flat layout (modules at repo root, not an installed package).
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 @pytest.fixture(autouse=True)
