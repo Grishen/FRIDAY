@@ -42,6 +42,9 @@ def register_ask_handler(fn: Callable[[str], str]) -> None:
 
 def _token_ok(headers) -> bool:
     expected = os.environ.get("JARVIS_COMPANION_TOKEN", "").strip()
+    host = os.environ.get("JARVIS_COMPANION_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    if not expected and host not in ("127.0.0.1", "localhost", "::1"):
+        return False
     if not expected:
         return True  # local-only default; set a token for LAN exposure
     got = (headers.get("X-Jarvis-Token") or headers.get("Authorization") or "").strip()
@@ -168,6 +171,13 @@ def start_companion_server() -> bool:
         return False
     _THREAD = threading.Thread(target=_SERVER.serve_forever, name="jarvis-companion", daemon=True)
     _THREAD.start()
+    token = os.environ.get("JARVIS_COMPANION_TOKEN", "").strip()
+    if host not in ("127.0.0.1", "localhost", "::1") and not token:
+        print(
+            f"[companion] WARNING: listening on {host} without JARVIS_COMPANION_TOKEN — "
+            "requests will be rejected. Set a token for LAN use.",
+            flush=True,
+        )
     print(f"[startup] Companion API: http://{host}:{port}/v1/health", flush=True)
     return True
 

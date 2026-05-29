@@ -2513,23 +2513,31 @@ def process_command(query: str, voice_raw: Optional[str] = None) -> None:
 
     #6) Tells the weather for a place
     elif 'weather' in query:
-        api_key = "YOUR_WEATHER_API_KEY_HERE"
-        base_url = "http://api.openweathermap.org/data/2.5/weather?"
-        speak("Sir, For Which Place you want to know the Weather?")
-        place = take_command().lower()
-        complete_url = base_url + "appid=" + api_key + "&q=" + place
-        response = requests.get(complete_url)
-        x = response.json()
-        if response.status_code == 200:
-            y = x['main']
-            current_temperature = y['temp']
-            z = x['weather']
-            weather_description = z[0]['description']
-            t3 = "Temperature at " + place + " is " + str(current_temperature) + " Kelvin and Climate is " + str(weather_description)
-            print(t3)
-            speak(t3)
+        from briefing import fetch_weather_for_city
+
+        place = ""
+        for prefix in ("weather in ", "weather for ", "what's the weather in ", "whats the weather in "):
+            if prefix in query:
+                place = query.split(prefix, 1)[1].strip(" ?.")
+                break
+        if not place:
+            default_city = os.environ.get("JARVIS_DEFAULT_CITY", "").strip()
+            if default_city:
+                place = default_city
+            else:
+                speak("Sir, which city should I check the weather for?")
+                follow = normalize_voice_query(take_command().lower())
+                if follow == "none":
+                    return
+                place = follow
+        summary = fetch_weather_for_city(place)
+        if summary:
+            speak(summary)
         else:
-            speak("City Not Found Sir")
+            speak(
+                "Sir, I couldn't fetch weather. Set OPENWEATHER_API_KEY in .env "
+                "and optionally JARVIS_DEFAULT_CITY for your home city."
+            )
 
     #7) Tells the current time and/or date
     elif 'time' in query:
@@ -2544,16 +2552,26 @@ def process_command(query: str, voice_raw: Optional[str] = None) -> None:
         print(t2)
         speak(t2)
 
-    #8) Set an Alarm
+    #8) Set an Alarm (uses reminder system + OS notification)
     elif 'alarm' in query:
-        speak("Sir, Please tell me the time to set the alarm, Example - set alarm for 6:30 am")
-        res = take_command().lower()
-        res = res.replace('set alarm for', '')
-        res = res.replace('.', '')
-        res = res.upper()
-        print(res)
-        import MyAlarm
-        MyAlarm.alarm(res)
+        from reminders import add_reminder, describe_reminder_due, parse_reminder
+
+        res = query
+        for prefix in ("set alarm for ", "alarm for ", "wake me at ", "wake me up at "):
+            if prefix in res:
+                res = res.split(prefix, 1)[1].strip()
+                break
+        if len(res.strip()) < 3 or res == query:
+            speak("Sir, when should I set the alarm? For example: set alarm for 6:30 am")
+            res = normalize_voice_query(take_command().lower())
+            if res == "none":
+                return
+        _msg, due, recurrence = parse_reminder(f"remind me to alarm {res}")
+        if due is None:
+            speak(f"Sir, I couldn't parse a time from '{res}'.")
+            return
+        rid = add_reminder("Alarm", due.timestamp(), recurrence=recurrence)
+        speak(f"Alarm set for {describe_reminder_due(due)}, reminder number {rid}.")
 
     #9) Tell the Internet Speed
     elif 'internet speed' in query:
@@ -2635,15 +2653,14 @@ def process_command(query: str, voice_raw: Optional[str] = None) -> None:
     # 15) help
     elif 'help' in query:
         speak(
-            'I can open apps, play music, search the web, tell time and weather, '
-            'manage your memory profile, and answer from your local knowledge base. '
-            'Try: knowledge status, resync knowledge, learn that ..., ingest url ..., '
-            'search the web for ..., remind me to ... in 10 minutes, remind me to stretch every weekday at 3pm, '
-            'list reminders, schedule lunch tomorrow at 12:30 for 1 hour, calendar today, '
-            'deep dive on a topic, summarize memory, show profile, ask my documents about a topic, '
-            'daily briefing, email myself ..., slack ..., sync now, or sync status. '
-            'You can also undo, undo last reminder, list users, switch user to ..., or just say "I am ..." to switch profile. '
-            'Newest: what is on my screen, describe the screen, do that again, cancel it, send that to slack.'
+            'I can open apps, play music, control Spotify and HomeKit, search the web, '
+            'tell time and weather, manage reminders and calendar, run routines, and answer from your documents. '
+            'Try: daily briefing, morning reflection, what is on my screen, remind me in 10 minutes, '
+            'calendar today, prep me for my next meeting, list routines, every weekday at 8 am daily briefing, '
+            'search the web for ..., ask my documents about ..., learn that ..., sync now, private mode on, '
+            'forget the last 5 minutes, list open loops, weekly digest, snooze for 30 minutes, '
+            'undo, switch user to ..., or just ask naturally and I will figure out the tools. '
+            'In passive mode say Hey Friday first, or disable JARVIS_PASSIVE_MODE for always listening.'
         )
 
     #16) Jokes
@@ -2691,15 +2708,27 @@ def process_command(query: str, voice_raw: Optional[str] = None) -> None:
             except JarvisExitRequest:
                 speak("Thanks for giving me your precious time Sir")
                 raise
-            except Exception:
+            except Exception as exc:
                 traceback.print_exc()
-                speak("Sir, the reasoning engine hit an error trying that phrase.")
+                low = str(exc).lower()
+                if any(t in low for t in ("429", "quota", "insufficient_quota", "billing", "402")):
+                    speak(
+                        "Sir, the cloud brain is out of quota. "
+                        "Start Ollama and keep JARVIS_LOCAL_LLM=prefer for local fallback."
+                    )
+                elif "ollama" in low or "no brain available" in low:
+                    speak(
+                        "Sir, no reasoning engine is available. "
+                        "Set OPENAI_API_KEY or start Ollama with JARVIS_LOCAL_LLM=prefer."
+                    )
+                else:
+                    speak("Sir, the reasoning engine hit an error trying that phrase.")
             return
 
         speak(
             "Sir, nothing in the shorthand command list matched. "
-            "Set OPENAI_API_KEY so the conversational brain can take flexible requests "
-            "(pip install -r requirements-brain.txt), or phrase it closer to a built-in command."
+            "Start Ollama with JARVIS_LOCAL_LLM=prefer, or set OPENAI_API_KEY, "
+            "so the conversational brain can take flexible requests."
         )
 
 
@@ -2914,6 +2943,7 @@ def run_voice_session(
 
                     kind = classify_interrupt(raw, was_speaking=True)
                     if kind == "stop":
+                        stop_speaking()
                         try:
                             from personas import get_address
 
@@ -2971,6 +3001,10 @@ def run_voice_session(
             except Exception:
                 pass
 
+            query = normalize_voice_query(raw)
+            if query == "none":
+                continue
+
             try:
                 from post_meeting import try_handle_post_meeting
 
@@ -3007,10 +3041,6 @@ def run_voice_session(
                 observe_open_loops(raw)
             except Exception:
                 pass
-
-            query = normalize_voice_query(raw)
-            if query == "none":
-                continue
 
             try:
                 from ambient import parse_snooze_command, snooze

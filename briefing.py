@@ -48,6 +48,14 @@ def fetch_weather_summary() -> str:
     city = os.environ.get("JARVIS_DEFAULT_CITY", "").strip()
     if not city:
         return ""
+    return fetch_weather_for_city(city)
+
+
+def fetch_weather_for_city(city: str) -> str:
+    """Return a spoken weather summary for *city*, or empty if unavailable."""
+    city = (city or "").strip()
+    if not city:
+        return ""
     data = _openweather_for_city(city)
     if not data:
         return ""
@@ -57,7 +65,7 @@ def fetch_weather_summary() -> str:
         temp = round(float(main.get("temp", 0)))
         feels = round(float(main.get("feels_like", temp)))
         desc = str(weather.get("description") or "").strip()
-        return f"Weather in {city}: {desc}, {temp}°C (feels {feels}°C)."
+        return f"Weather in {city}: {desc}, {temp}°C, feels like {feels}°C."
     except Exception:
         return ""
 
@@ -249,5 +257,6 @@ __all__ = [
     "fetch_today_calendar",
     "fetch_top_headlines",
     "fetch_top_reminders",
+    "fetch_weather_for_city",
     "fetch_weather_summary",
 ]

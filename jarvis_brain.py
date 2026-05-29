@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import traceback
 from typing import Any
 
 import jarvis_actions as ja
@@ -26,10 +27,19 @@ from jarvis_exceptions import JarvisExitRequest
 
 
 def is_brain_enabled() -> bool:
-    if not os.environ.get("OPENAI_API_KEY", "").strip():
-        return False
     flag = os.environ.get("JARVIS_BRAIN", "1").strip().lower()
-    return flag not in ("0", "false", "no", "off")
+    if flag in ("0", "false", "no", "off"):
+        return False
+    if os.environ.get("OPENAI_API_KEY", "").strip():
+        return True
+    try:
+        from local_llm import local_llm_mode, ollama_available
+
+        if ollama_available() and local_llm_mode() not in ("0", "false", "no", "off"):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def brain_model_name() -> str:
@@ -1010,22 +1020,193 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "function": {
             "name": "launch_local_app",
             "description": (
-                "Open a bundled local program: editor, terminal, vscode, or calculator."
+                "Open a local application by name (Safari, Notes, Terminal, VS Code, etc.). "
+                "On macOS any installed app name works via open -a."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "application": {
                         "type": "string",
-                        "enum": [
-                            "notepad",
-                            "terminal",
-                            "vscode",
-                            "calculator",
-                        ],
+                        "description": (
+                            "App name or alias: safari, chrome, notes, terminal, vscode, "
+                            "calculator, notepad, or any macOS app name."
+                        ),
                     },
                 },
                 "required": ["application"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": (
+                "Get current weather for a city. Uses OPENWEATHER_API_KEY. "
+                "If city omitted, uses JARVIS_DEFAULT_CITY from env."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "City name, e.g. San Francisco",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_open",
+            "description": (
+                "Open a URL in a headless browser, optionally wait for a selector, "
+                "and return page text or a screenshot path. Requires Playwright."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "selector": {"type": "string", "description": "CSS selector to extract."},
+                    "wait_for": {"type": "string", "description": "CSS selector to wait for."},
+                    "screenshot": {"type": "boolean", "description": "Save a screenshot."},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_click",
+            "description": "Open a URL and click a CSS selector (Playwright).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "selector": {"type": "string"},
+                    "wait_for": {"type": "string"},
+                },
+                "required": ["url", "selector"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_fill",
+            "description": "Open a URL, fill a form field, optionally submit (Playwright).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "selector": {"type": "string"},
+                    "text": {"type": "string"},
+                    "submit": {"type": "boolean"},
+                },
+                "required": ["url", "selector", "text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "macos_music",
+            "description": "Control Apple Music on macOS (play, pause, next, now playing).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["play", "pause", "next", "previous", "now_playing"],
+                    },
+                    "query": {"type": "string", "description": "Search query when action=play."},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "macos_volume",
+            "description": "Set or adjust macOS system volume (0-100) or mute.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["set", "up", "down", "mute"]},
+                    "level": {"type": "integer", "description": "0-100 when action=set."},
+                    "step": {"type": "integer", "description": "Step for up/down (default 10)."},
+                    "mute": {"type": "boolean"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "macos_send_imessage",
+            "description": "Send an iMessage on macOS to a contact name or phone number.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipient": {"type": "string"},
+                    "text": {"type": "string"},
+                },
+                "required": ["recipient", "text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "macos_create_note",
+            "description": "Create a note in Apple Notes on macOS.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "body": {"type": "string"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_python_sandbox",
+            "description": (
+                "Run short Python code in a restricted sandbox. Requires JARVIS_CODE_SANDBOX=1. "
+                "Use for quick calculations or data transforms — not for destructive OS actions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string"},
+                    "timeout_s": {"type": "number"},
+                    "network": {"type": "boolean"},
+                },
+                "required": ["code"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_shell_sandbox",
+            "description": (
+                "Run a shell command in a restricted sandbox. Requires JARVIS_CODE_SANDBOX=1."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"},
+                    "timeout_s": {"type": "number"},
+                },
+                "required": ["command"],
             },
         },
     },
@@ -1331,6 +1512,47 @@ def brain_system_instructions() -> str:
     return SYSTEM_JARVIS
 
 
+def _cloud_quota_or_rate_error(exc: BaseException) -> bool:
+    name = type(exc).__name__.lower()
+    if "ratelimit" in name or "quota" in name:
+        return True
+    text = str(exc).lower()
+    return any(
+        token in text
+        for token in (
+            "429",
+            "402",
+            "insufficient_quota",
+            "rate limit",
+            "quota",
+            "billing",
+            "exceeded your current quota",
+        )
+    )
+
+
+def _try_local_agent_brain(*, user_utterance: str, episodic_prefill: str) -> Optional[str]:
+    try:
+        from local_llm import ollama_available, run_local_agent_brain, run_local_brain
+
+        if not ollama_available():
+            return None
+        try:
+            return run_local_agent_brain(
+                user_utterance=user_utterance,
+                episodic_prefill=episodic_prefill,
+            )
+        except Exception:
+            traceback.print_exc()
+            return run_local_brain(
+                user_utterance=user_utterance,
+                episodic_prefill=episodic_prefill,
+            )
+    except Exception:
+        traceback.print_exc()
+        return None
+
+
 def run_agent_brain(*, user_utterance: str, episodic_prefill: str) -> str:
     """Chat Completions with tools loop; narration fit for ElevenLabs / local speak()."""
     cloud_key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -1343,17 +1565,27 @@ def run_agent_brain(*, user_utterance: str, episodic_prefill: str) -> str:
         pass
 
     try:
-        from local_llm import run_local_brain, should_use_local
+        from local_llm import should_prefer_local_first, should_use_local
 
-        if should_use_local(private=private, cloud_key_missing=not cloud_key):
-            return run_local_brain(
+        if should_prefer_local_first(private=private) or should_use_local(
+            private=private, cloud_key_missing=not cloud_key
+        ):
+            local_reply = _try_local_agent_brain(
                 user_utterance=user_utterance,
                 episodic_prefill=episodic_prefill,
             )
+            if local_reply:
+                return local_reply
     except Exception:
         pass
 
     if not cloud_key:
+        local_reply = _try_local_agent_brain(
+            user_utterance=user_utterance,
+            episodic_prefill=episodic_prefill,
+        )
+        if local_reply:
+            return local_reply
         raise RuntimeError(
             "No brain available: set OPENAI_API_KEY or start Ollama with JARVIS_LOCAL_LLM=prefer."
         )
@@ -1382,69 +1614,89 @@ def run_agent_brain(*, user_utterance: str, episodic_prefill: str) -> str:
         {"role": "user", "content": user_utterance.strip()},
     ]
 
-    for _ in range(brain_max_tool_rounds()):
-        completion = client.chat.completions.create(
-            model=brain_model_name(),
-            messages=messages,
-            tools=TOOL_SPECS,
-            tool_choice="auto",
-            temperature=0.38,
-        )
+    try:
+        for _ in range(brain_max_tool_rounds()):
+            try:
+                completion = client.chat.completions.create(
+                    model=brain_model_name(),
+                    messages=messages,
+                    tools=TOOL_SPECS,
+                    tool_choice="auto",
+                    temperature=0.38,
+                )
+            except Exception as exc:
+                if _cloud_quota_or_rate_error(exc):
+                    local_reply = _try_local_agent_brain(
+                        user_utterance=user_utterance,
+                        episodic_prefill=episodic_prefill,
+                    )
+                    if local_reply:
+                        return local_reply
+                raise
 
-        msg = completion.choices[0].message
-        tcalls = getattr(msg, "tool_calls", None) or []
+            msg = completion.choices[0].message
+            tcalls = getattr(msg, "tool_calls", None) or []
 
-        if not tcalls:
-            spoken = (getattr(msg, "content", None) or "").strip()
-            return spoken or "Quietly finished, Sir — no loose ends to report aloud."
+            if not tcalls:
+                spoken = (getattr(msg, "content", None) or "").strip()
+                return spoken or "Quietly finished, Sir — no loose ends to report aloud."
 
-        tool_call_entries: list[dict[str, Any]] = []
-        for tc in tcalls:
-            fname = getattr(getattr(tc, "function", None), "name", "") or ""
-            fargs = getattr(getattr(tc, "function", None), "arguments", "") or "{}"
-            tc_id = getattr(tc, "id", "") or ""
-            tool_call_entries.append(
-                {
-                    "id": tc_id,
-                    "type": "function",
-                    "function": {"name": fname, "arguments": fargs},
-                }
-            )
+            tool_call_entries: list[dict[str, Any]] = []
+            for tc in tcalls:
+                fname = getattr(getattr(tc, "function", None), "name", "") or ""
+                fargs = getattr(getattr(tc, "function", None), "arguments", "") or "{}"
+                tc_id = getattr(tc, "id", "") or ""
+                tool_call_entries.append(
+                    {
+                        "id": tc_id,
+                        "type": "function",
+                        "function": {"name": fname, "arguments": fargs},
+                    }
+                )
 
-        messages.append(
-            {
-                "role": "assistant",
-                "content": msg.content,
-                "tool_calls": tool_call_entries,
-            }
-        )
-
-        for tc in tcalls:
-            name = getattr(getattr(tc, "function", None), "name", "") or ""
-            raw_args = getattr(getattr(tc, "function", None), "arguments", "") or "{}"
-            tc_id = getattr(tc, "id", "") or ""
-            observations = invoke_tool_named(name, raw_args)
             messages.append(
                 {
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "content": observations[:12000],
+                    "role": "assistant",
+                    "content": msg.content,
+                    "tool_calls": tool_call_entries,
                 }
             )
 
-    recap = client.chat.completions.create(
-        model=brain_model_name(),
-        messages=messages
-        + [
-            {
-                "role": "user",
-                "content": "Summarize what was done succinctly — no tools.",
-            }
-        ],
-        temperature=0.2,
-    )
-    final = getattr(recap.choices[0].message, "content", "") or ""
-    return final.strip() or "Pausing multi-step work here, Sir — please restate priorities."
+            for tc in tcalls:
+                name = getattr(getattr(tc, "function", None), "name", "") or ""
+                raw_args = getattr(getattr(tc, "function", None), "arguments", "") or "{}"
+                tc_id = getattr(tc, "id", "") or ""
+                observations = invoke_tool_named(name, raw_args)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": observations[:12000],
+                    }
+                )
+
+        recap = client.chat.completions.create(
+            model=brain_model_name(),
+            messages=messages
+            + [
+                {
+                    "role": "user",
+                    "content": "Summarize what was done succinctly — no tools.",
+                }
+            ],
+            temperature=0.2,
+        )
+        final = getattr(recap.choices[0].message, "content", "") or ""
+        return final.strip() or "Pausing multi-step work here, Sir — please restate priorities."
+    except Exception as exc:
+        if _cloud_quota_or_rate_error(exc):
+            local_reply = _try_local_agent_brain(
+                user_utterance=user_utterance,
+                episodic_prefill=episodic_prefill,
+            )
+            if local_reply:
+                return local_reply
+        raise
 
 
 def invoke_tool_named(name: str, arguments_json: str) -> str:
@@ -2136,12 +2388,28 @@ def invoke_tool_named(name: str, arguments_json: str) -> str:
     if name == "current_date":
         return ja.current_date_display()
 
+    if name == "launch_local_app":
+        app_alias = str(args.get("application", "")).strip()
+        if not app_alias:
+            return "Provide an application name."
+        try:
+            return ja.open_application_by_name(app_alias)
+        except AttributeError:
+            return ja.open_application(app_alias.lower())
+
+    if name == "get_weather":
+        from briefing import fetch_weather_for_city
+
+        city = str(args.get("city", "") or "").strip()
+        if not city:
+            city = os.environ.get("JARVIS_DEFAULT_CITY", "").strip()
+        if not city:
+            return "Provide a city or set JARVIS_DEFAULT_CITY in .env."
+        summary = fetch_weather_for_city(city)
+        return summary or f"Could not fetch weather for {city}. Check OPENWEATHER_API_KEY."
+
     if name == "youtube_play":
         return ja.play_youtube_music(str(args.get("query", "")))
-
-    if name == "launch_local_app":
-        app_alias = str(args.get("application", "")).strip().lower()
-        return ja.open_application(app_alias)
 
     if name == "speaker_volume":
         return ja.volume_action(str(args.get("action", "")))
